@@ -11,6 +11,7 @@ class MultiplayerGameScreen extends StatefulWidget {
 }
 
 class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
+
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance; // For FCM
@@ -19,7 +20,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
   String _currentUserName = '';
   int _diceValue = 1;
   int _currentTurnScore = 0;
-  Map<String, int> _scores = {};
+  Map<String, dynamic> _scores = {};
   List<Map<String, String>> _players = []; // List of players with name and ID
   bool _isMyTurn = false;
   String _currentPlayer = '';
@@ -75,6 +76,39 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
       print("Error adding player to gameRoom: $e");
     }
   }
+  void _invitePlayer(String playerId) async {
+    final gameRef = _firestore.collection('invites').doc();
+
+    try {
+      await gameRef.set({
+        'senderId': _currentUserId,
+        'receiverId': playerId,
+        'status': 'pending',
+      });
+
+      print("Invite sent to player $playerId");
+
+      // Send an FCM notification to the invited player
+      _sendFCMInvite(playerId);
+    } catch (e) {
+      print("Error sending invite: $e");
+    }
+  }
+  void _sendFCMInvite(String playerId) async {
+    final playerDoc = await _firestore.collection('users').doc(playerId).get();
+    final fcmToken = playerDoc.data()?['fcmToken'];
+
+    if (fcmToken != null) {
+      await _messaging.sendMessage(
+        to: fcmToken,
+        data: {
+          'title': 'Game Invitation',
+          'body': 'You have been invited to join a game!',
+        },
+      );
+    }
+  }
+
 
   // Listen for real-time game updates (players, scores, dice rolls, turns)
   void _listenForGameUpdates() {
@@ -217,23 +251,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
     return _players[nextIndex]['name']!;
   }
 
-  void _invitePlayer(String playerId) async {
-    // Get the FCM token of the player to invite
-    final playerDoc = await _firestore.collection('users').doc(playerId).get();
-    final fcmToken = playerDoc.data()?['fcmToken'];
 
-    if (fcmToken != null) {
-      // Send FCM message
-      await _messaging.sendMessage(
-        to: fcmToken,
-        data: {
-          'title': 'Game Invitation',
-          'body': 'You have been invited to join a dice game!',
-        },
-      );
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Invitation sent to $playerId')));
-    }
-  }
   void _createGameRoom() async {
     final gameRef = _firestore.collection('gameRoom').doc('game');
 
@@ -249,6 +267,81 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
       print("Error creating game room: $e");
     }
   }
+  void _listenForInvites() {
+    _firestore.collection('invites').where('receiverId', isEqualTo: _currentUserId)
+        .snapshots()
+        .listen((snapshot) {
+      snapshot.docs.forEach((doc) {
+        var invite = doc.data();
+        if (invite['status'] == 'pending') {
+          _showInviteDialog(doc.id, invite['senderId']);
+        }
+      });
+    });
+  }
+  void _showInviteDialog(String inviteId, String senderId) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Game Invite'),
+          content: Text('You have been invited by $senderId.'),
+          actions: [
+            TextButton(
+              onPressed: () => _respondToInvite(inviteId, 'accepted'),
+              child: Text('Accept'),
+            ),
+            TextButton(
+              onPressed: () => _respondToInvite(inviteId, 'ignored'),
+              child: Text('Ignore'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  void _respondToInvite(String inviteId, String response) async {
+    await _firestore.collection('invites').doc(inviteId).update({
+      'status': response,
+    });
+
+    if (response == 'accepted') {
+      _joinGame();
+    }
+  }
+  void _listenForScores() {
+    _firestore.collection('gameRoom').doc('game').snapshots().listen((snapshot) {
+      setState(() {
+        _scores = Map<String, dynamic>.from(snapshot.data()?['players'] ?? {});
+      });
+    });
+  }
+  void _joinGame() async {
+    final gameRef = _firestore.collection('gameRoom').doc('game');
+
+    try {
+      // Check if player is already in the game
+      final gameSnapshot = await gameRef.get();
+      final gameData = gameSnapshot.data();
+
+      if (gameData != null && gameData['players'] != null && gameData['players'].containsKey(_currentUserId)) {
+        print("Player is already in the game.");
+      } else {
+        // Add the player to the game
+        await gameRef.update({
+          'players.${_currentUserId}': {
+            'name': _currentUserName,
+            'score': 0 // Initialize score as 0
+          }
+        });
+        print("Player $_currentUserName added to gameRoom");
+      }
+    } catch (e) {
+      print("Error joining game: $e");
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "271274250502",
+    "project_id": "lastdice-a0a6a",
+    "storage_bucket": "lastdice-a0a6a.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:271274250502:android:32465f31e8d18f64f18e87",
+        "android_client_info": {
+          "package_name": "com.example.last"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAsu95B4XwSwBrgcCxeqosi8t8mM8-DQgY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
